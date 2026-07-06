@@ -86,11 +86,8 @@ export default function ARScene({ onExit }: ARSceneProps) {
       }
     );
 
-    // AR BUTTON with optional features
-    const arButton = ARButton.createButton(renderer, {
-      optionalFeatures: ['hit-test', 'dom-overlay'],
-      domOverlay: { root: overlayRef.current }
-    });
+    // AR BUTTON (Bare minimum configuration to ensure compatibility)
+    const arButton = ARButton.createButton(renderer, {});
     document.body.appendChild(arButton);
 
     // CONTROLLER & HIT TEST
