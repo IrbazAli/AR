@@ -151,8 +151,8 @@ export default function ARScene({ onExit }: ARSceneProps) {
 
         if (session && hitTestSourceRequested === false) {
           session.requestReferenceSpace('viewer').then((refSpace) => {
-            if (session.requestHitTestSource) {
-              session.requestHitTestSource({ space: refSpace }).then((source) => {
+            if ((session as any).requestHitTestSource) {
+              (session as any).requestHitTestSource({ space: refSpace }).then((source: any) => {
                 hitTestSource = source;
               });
             }
