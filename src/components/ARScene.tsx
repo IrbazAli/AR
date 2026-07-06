@@ -86,10 +86,9 @@ export default function ARScene({ onExit }: ARSceneProps) {
       }
     );
 
-    // AR BUTTON with DOM Overlay
+    // AR BUTTON with optional features
     const arButton = ARButton.createButton(renderer, {
-      requiredFeatures: ['hit-test'],
-      optionalFeatures: ['dom-overlay'],
+      optionalFeatures: ['hit-test', 'dom-overlay'],
       domOverlay: { root: overlayRef.current }
     });
     document.body.appendChild(arButton);
@@ -103,29 +102,39 @@ export default function ARScene({ onExit }: ARSceneProps) {
     let avatarPlaced = false;
 
     controller.addEventListener('select', () => {
+      let targetPos = new THREE.Vector3();
+      let hasTarget = false;
+
       if (reticle.visible) {
+        targetPos.setFromMatrixPosition(reticle.matrix);
+        hasTarget = true;
+      } else {
+        // FALLBACK: If hit-test is unsupported, place 2 meters in front of the camera, 1.5m down (approx floor)
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        cameraDir.y = 0;
+        cameraDir.normalize();
+        targetPos.copy(camera.position).add(cameraDir.multiplyScalar(2));
+        targetPos.y -= 1.5; 
+        hasTarget = true;
+      }
+
+      if (hasTarget) {
         if (!avatarPlaced && avatar) {
           // Initial placement
-          avatar.position.setFromMatrixPosition(reticle.matrix);
-          // Look at user
+          avatar.position.copy(targetPos);
           const lookPos = new THREE.Vector3(camera.position.x, avatar.position.y, camera.position.z);
           avatar.lookAt(lookPos);
           avatar.visible = true;
           avatarPlaced = true;
           setTreeVisible(true); // Show family tree once placed
         } else if (avatar && avatarPlaced) {
-          // Move avatar to new reticle position
-          const targetPos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-          
-          // Place animal track
+          // Move avatar to new position
           placeAnimalTrack(targetPos);
-          
-          // Simple teleport for MVP, or we can just update position
           avatar.position.copy(targetPos);
           const lookPos = new THREE.Vector3(camera.position.x, avatar.position.y, camera.position.z);
           avatar.lookAt(lookPos);
           
-          // Play walk animation briefly (mock walking logic)
           if (walkAction && idleAction) {
             idleAction.stop();
             walkAction.play();
