@@ -70,11 +70,10 @@ export default function ARScene({ onExit }: ARSceneProps) {
       }
     });
 
-    // AR BUTTON with DOM Overlay
+    // AR BUTTON
     const arButton = ARButton.createButton(renderer, {
-      requiredFeatures: ['hit-test'],
-      optionalFeatures: ['dom-overlay'],
-      domOverlay: { root: overlayRef.current }
+      optionalFeatures: ['hit-test']
+      // Temporarily disabled dom-overlay to check if it's crashing the session
     });
     document.body.appendChild(arButton);
 
