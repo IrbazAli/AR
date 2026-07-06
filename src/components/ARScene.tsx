@@ -17,6 +17,17 @@ export default function ARScene({ onExit }: ARSceneProps) {
   useEffect(() => {
     if (!containerRef.current || !overlayRef.current) return;
 
+    // Inject Eruda mobile console for debugging
+    if (!(window as any).eruda) {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+      script.onload = () => {
+        (window as any).eruda.init();
+        console.log("Eruda Mobile Console Initialized");
+      };
+      document.head.appendChild(script);
+    }
+
     // SCENE SETUP
     const scene = new THREE.Scene();
     
