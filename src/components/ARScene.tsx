@@ -206,7 +206,7 @@ export default function ARScene({ onExit }: ARSceneProps) {
       <div ref={containerRef} className="ar-container" />
       
       {/* DOM Overlay container required for WebXR UI */}
-      <div ref={overlayRef} style={{ display: 'none' }}>
+      <div ref={overlayRef}>
         {/* We make it flex/block when AR starts, but Three.js DOM Overlay requires the root to be hidden/styled carefully */}
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
           
