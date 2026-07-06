@@ -65,15 +65,21 @@ export default function ARScene({ onExit }: ARSceneProps) {
         idleAction = mixer.clipAction(idleAnim);
         idleAction.play();
       }
-      if (walkAnim) {
-        walkAction = mixer.clipAction(walkAnim);
+        if (walkAnim) {
+          walkAction = mixer.clipAction(walkAnim);
+        }
+      },
+      undefined,
+      (error) => {
+        console.error('Error loading RobotExpressive.glb:', error);
       }
-    });
+    );
 
-    // AR BUTTON
+    // AR BUTTON with DOM Overlay
     const arButton = ARButton.createButton(renderer, {
-      optionalFeatures: ['hit-test']
-      // Temporarily disabled dom-overlay to check if it's crashing the session
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: overlayRef.current }
     });
     document.body.appendChild(arButton);
 
