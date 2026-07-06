@@ -6,8 +6,6 @@ export const metadata: Metadata = {
   description: "Month 1 MVP for AR Memorial Platform",
 };
 
-import Script from "next/script";
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -17,7 +15,6 @@ export default function RootLayout({
     <html lang="en">
       <body>
         {children}
-        <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js" strategy="lazyOnload" />
       </body>
     </html>
   );
