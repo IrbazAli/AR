@@ -30,6 +30,11 @@ export default function ARScene() {
   useEffect(() => {
     if (!containerRef.current || !videoRef.current) return;
 
+    let isMounted = true;
+    let animationFrameId: number;
+    let localMixer: THREE.AnimationMixer | null = null;
+    const clock = new THREE.Clock();
+
     // 1. SETUP RAW CAMERA STREAM (WebRTC)
     navigator.mediaDevices.getUserMedia({ 
       video: { facingMode: { ideal: "environment" } } 
@@ -42,30 +47,27 @@ export default function ARScene() {
     })
     .catch((err) => {
       console.error("Camera access denied or unavailable", err);
-      alert("Please allow camera access to use this AR feature.");
     });
 
-    // 2. SETUP THREE.JS OVERLAY (Transparent Canvas)
+    // 2. SETUP THREE.JS OVERLAY
     const scene = new THREE.Scene();
     
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-    camera.position.set(0, 0.5, 4); // Positioned further back
+    // Position camera exactly where it worked previously
+    camera.position.set(0, 1.5, 3); 
+    camera.lookAt(0, 1, 0); // Lock the camera to always look at the center
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
+    
+    // Force clear container to prevent Strict Mode duplicates
+    containerRef.current.innerHTML = '';
     containerRef.current.appendChild(renderer.domElement);
 
-    // OrbitControls for touch rotation of the 3D model
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = false;
-    controls.enableZoom = true;
-    controls.target.set(0, 0.5, 0); // Look directly at the center of the robot
-    controls.update();
-
-    // Lighting
+    // 4. LIGHTING
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 2);
     light.position.set(0.5, 1, 0.25);
     scene.add(light);
@@ -74,49 +76,53 @@ export default function ARScene() {
     dirLight.position.set(0, 2, 2);
     scene.add(dirLight);
 
-    // 3. LOAD THE 3D AVATAR
+    // 5. LOAD THE 3D AVATAR
     const loader = new GLTFLoader();
     loader.load('/RobotExpressive.glb', (gltf) => {
-      const avatar = gltf.scene;
-      avatar.scale.set(0.6, 0.6, 0.6); // Scale down slightly so it fits better
-      avatar.position.set(0, -0.5, 0); // Place slightly down so it sits centrally
+      if (!isMounted) return; // Abort if React unmounted while downloading!
 
+      const avatar = gltf.scene;
+      avatar.scale.set(0.6, 0.6, 0.6); 
+      // Place the avatar right below the center point
+      avatar.position.set(0, -0.5, 0); 
       
       // Face the camera directly
       avatar.rotation.y = Math.PI; 
-
       scene.add(avatar);
 
       // Handle Animations
-      const mixer = new THREE.AnimationMixer(avatar);
-      mixerRef.current = mixer;
+      localMixer = new THREE.AnimationMixer(avatar);
+      mixerRef.current = localMixer; // Expose for walk button
 
       const idleAnim = gltf.animations.find((a) => a.name.toLowerCase().includes('idle'));
       const walkAnim = gltf.animations.find((a) => a.name.toLowerCase().includes('walk'));
 
       if (idleAnim) {
-        const idleAction = mixer.clipAction(idleAnim);
+        const idleAction = localMixer.clipAction(idleAnim);
         idleAction.play();
         idleActionRef.current = idleAction;
       }
       if (walkAnim) {
-        walkActionRef.current = mixer.clipAction(walkAnim);
+        walkActionRef.current = localMixer.clipAction(walkAnim);
       }
     });
 
-    // 4. RENDER LOOP
+    // 6. RENDER LOOP
     const animate = () => {
-      requestAnimationFrame(animate);
-      const delta = clockRef.current.getDelta();
-      if (mixerRef.current) {
-        mixerRef.current.update(delta);
+      if (!isMounted) return; // Bulletproof kill-switch for Strict Mode
+      
+      animationFrameId = requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      
+      if (localMixer) {
+        localMixer.update(delta);
       }
-      controls.update();
+      
       renderer.render(scene, camera);
     };
     animate();
 
-    // Handle Resize
+    // 7. HANDLE RESIZE
     const onWindowResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -124,9 +130,12 @@ export default function ARScene() {
     };
     window.addEventListener('resize', onWindowResize);
 
+    // 8. CLEANUP
     return () => {
+      isMounted = false; // Trigger kill-switch
+      cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', onWindowResize);
-      if (containerRef.current) {
+      if (containerRef.current && renderer.domElement.parentNode) {
         containerRef.current.removeChild(renderer.domElement);
       }
       if (videoRef.current && videoRef.current.srcObject) {
@@ -188,26 +197,27 @@ export default function ARScene() {
         style={{ 
           position: 'absolute',
           pointerEvents: 'auto', 
-          bottom: '40px',
+          bottom: '10%', // Raised slightly so it is not hidden by taskbars
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex', 
           flexDirection: 'column', 
           alignItems: 'center',
           gap: '15px',
+          width: '90%',
           zIndex: 3 // UI sits ABOVE the Canvas
         }}
       >
-        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button className="gold-btn" onClick={() => setTreeVisible(!treeVisible)}>
-            Toggle Family Tree
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => setTreeVisible(!treeVisible)}>
+            Toggle Tree
           </button>
           
-          <button className="gold-btn" onClick={handleWalk}>
+          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={handleWalk}>
             Walk Forward
           </button>
 
-          <button className="gold-btn" onClick={() => window.location.reload()}>
+          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => window.location.reload()}>
             Exit AR
           </button>
         </div>
