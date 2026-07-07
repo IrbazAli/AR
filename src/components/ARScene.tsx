@@ -47,11 +47,14 @@ export default function ARScene({ onExit }: ARSceneProps) {
   const [treeVisible, setTreeVisible] = useState(false);
   const [distance, setDistance] = useState<number | null>(null);
   const [instruction, setInstruction] = useState<string>('Standby');
+  const [inputLat, setInputLat] = useState<string>('');
+  const [inputLng, setInputLng] = useState<string>('');
 
   // Navigation Refs (Used inside requestAnimationFrame)
   const headingRef = useRef<number>(0);
   const targetLocationRef = useRef<{lat: number, lng: number} | null>(null);
   const currentLocationRef = useRef<{lat: number, lng: number} | null>(null);
+  const lastPosRef = useRef<{lat: number, lng: number, time: number} | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !videoRef.current) return;
@@ -94,6 +97,36 @@ export default function ARScene({ onExit }: ARSceneProps) {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude
         };
+
+        const now = Date.now();
+        let currentSpeed = pos.coords.speed || 0; 
+        
+        if (lastPosRef.current) {
+          const distWalked = getDistance(
+            lastPosRef.current.lat, lastPosRef.current.lng,
+            pos.coords.latitude, pos.coords.longitude
+          );
+          const timeElapsed = (now - lastPosRef.current.time) / 1000; 
+          
+          if (timeElapsed > 0 && (pos.coords.speed === null || pos.coords.speed === undefined)) {
+             currentSpeed = distWalked / timeElapsed;
+          }
+        }
+        
+        lastPosRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude, time: now };
+
+        if (currentSpeed > 0.4) {
+           if (walkActionRef.current && idleActionRef.current) {
+             idleActionRef.current.stop();
+             walkActionRef.current.play();
+           }
+        } else {
+           if (walkActionRef.current && idleActionRef.current) {
+             walkActionRef.current.stop();
+             idleActionRef.current.play();
+           }
+        }
+
         if (targetLocationRef.current) {
           const dist = getDistance(
             pos.coords.latitude, pos.coords.longitude,
@@ -102,6 +135,10 @@ export default function ARScene({ onExit }: ARSceneProps) {
           setDistance(Math.round(dist));
           if (dist < 5) {
              setInstruction("You have arrived at the grave!");
+             if (walkActionRef.current && idleActionRef.current) {
+               walkActionRef.current.stop();
+               idleActionRef.current.play();
+             }
           } else {
              setInstruction(`Follow the Guide`);
           }
@@ -228,29 +265,21 @@ export default function ARScene({ onExit }: ARSceneProps) {
       } catch (err) { console.error(err); }
     }
     
-    // Set Mock Destination 50m North
-    if (currentLocationRef.current) {
-      targetLocationRef.current = {
-        lat: currentLocationRef.current.lat + 0.00045, // approx 50 meters North
-        lng: currentLocationRef.current.lng
-      };
-      setInstruction('Destination Set: 50m North');
-    } else {
-      setInstruction('Locating GPS signal...');
-      navigator.geolocation.getCurrentPosition((pos) => {
-        targetLocationRef.current = {
-          lat: pos.coords.latitude + 0.00045,
-          lng: pos.coords.longitude
-        };
-        setInstruction('Destination Set: 50m North');
-      });
+    if (!inputLat || !inputLng) {
+      setInstruction('Please enter valid coordinates.');
+      return;
     }
 
-    // Trigger walk animation continuously
-    if (walkActionRef.current && idleActionRef.current) {
-      idleActionRef.current.stop();
-      walkActionRef.current.play();
+    const lat = parseFloat(inputLat);
+    const lng = parseFloat(inputLng);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      setInstruction('Invalid coordinates format.');
+      return;
     }
+
+    targetLocationRef.current = { lat, lng };
+    setInstruction(`Destination Set: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
   };
 
   return (
@@ -267,13 +296,30 @@ export default function ARScene({ onExit }: ARSceneProps) {
 
       {/* HTML Overlay UI */}
       <div className="overlay-ui" style={{ position: 'absolute', pointerEvents: 'auto', bottom: '10%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px', width: '90%', zIndex: 3 }}>
+        {/* Input Form */}
+        <div style={{ display: 'flex', gap: '10px', background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '10px', marginBottom: '10px' }}>
+          <input 
+            type="text" 
+            placeholder="Lat" 
+            value={inputLat} 
+            onChange={(e) => setInputLat(e.target.value)} 
+            style={{ width: '80px', padding: '5px' }} 
+          />
+          <input 
+            type="text" 
+            placeholder="Lng" 
+            value={inputLng} 
+            onChange={(e) => setInputLng(e.target.value)} 
+            style={{ width: '80px', padding: '5px' }} 
+          />
+          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '5px 10px', backgroundColor: '#e85d04' }} onClick={handleStartNav}>
+            Go
+          </button>
+        </div>
+
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => setTreeVisible(!treeVisible)}>
             Family Tree
-          </button>
-          
-          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px', backgroundColor: '#e85d04' }} onClick={handleStartNav}>
-            Start Navigation
           </button>
 
           <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => onExit ? onExit() : window.location.reload()}>
