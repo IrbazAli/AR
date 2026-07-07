@@ -29,7 +29,11 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-export default function ARScene() {
+interface ARSceneProps {
+  onExit?: () => void;
+}
+
+export default function ARScene({ onExit }: ARSceneProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -272,7 +276,7 @@ export default function ARScene() {
             Start Navigation
           </button>
 
-          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => window.location.reload()}>
+          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => onExit ? onExit() : window.location.reload()}>
             Exit
           </button>
         </div>
