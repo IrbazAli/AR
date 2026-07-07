@@ -49,7 +49,7 @@ export default function ARScene() {
     const scene = new THREE.Scene();
     
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
-    camera.position.set(0, 1.5, 3); // Positioned slightly above and back
+    camera.position.set(0, 0.5, 4); // Positioned further back
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -62,7 +62,7 @@ export default function ARScene() {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = false;
     controls.enableZoom = true;
-    controls.target.set(0, 1, 0); // Look at the center of the robot
+    controls.target.set(0, 0.5, 0); // Look directly at the center of the robot
     controls.update();
 
     // Lighting
@@ -78,7 +78,9 @@ export default function ARScene() {
     const loader = new GLTFLoader();
     loader.load('/RobotExpressive.glb', (gltf) => {
       const avatar = gltf.scene;
-      avatar.position.set(0, -0.5, 0); // Place exactly in center view, slightly down
+      avatar.scale.set(0.6, 0.6, 0.6); // Scale down slightly so it fits better
+      avatar.position.set(0, -0.5, 0); // Place slightly down so it sits centrally
+
       
       // Face the camera directly
       avatar.rotation.y = Math.PI; 
