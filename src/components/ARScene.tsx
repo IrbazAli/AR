@@ -32,7 +32,7 @@ export default function ARScene() {
 
     // 1. SETUP RAW CAMERA STREAM (WebRTC)
     navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: "environment" } 
+      video: { facingMode: { ideal: "environment" } } 
     })
     .then((stream) => {
       if (videoRef.current) {
