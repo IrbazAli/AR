@@ -222,8 +222,9 @@ export default function ARScene({ onExit }: ARSceneProps) {
         
         // Rotate the avatar to point toward the destination relative to camera
         // Using lerp for smooth rotation
+        // Add Math.PI so the robot faces AWAY from the camera instead of towards it
         const currentY = avatarRef.current.rotation.y;
-        const targetY = -diffRad; 
+        const targetY = -diffRad + Math.PI; 
         avatarRef.current.rotation.y = currentY + (targetY - currentY) * 0.1;
       }
 
