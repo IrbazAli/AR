@@ -29,6 +29,21 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
+function createPawPrint() {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ 
+    color: 0x00ffff, transparent: true, opacity: 0.8, depthWrite: false
+  });
+  const mainPad = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), material);
+  mainPad.scale.set(1, 0.2, 1);
+  group.add(mainPad);
+  const toeGeo = new THREE.SphereGeometry(0.06, 16, 16);
+  const toe1 = new THREE.Mesh(toeGeo, material); toe1.scale.set(1, 0.2, 1); toe1.position.set(-0.15, 0, 0.2); group.add(toe1);
+  const toe2 = new THREE.Mesh(toeGeo, material); toe2.scale.set(1, 0.2, 1); toe2.position.set(0, 0, 0.25); group.add(toe2);
+  const toe3 = new THREE.Mesh(toeGeo, material); toe3.scale.set(1, 0.2, 1); toe3.position.set(0.15, 0, 0.2); group.add(toe3);
+  return group;
+}
+
 interface ARSceneProps {
   onExit?: () => void;
 }
@@ -49,6 +64,13 @@ export default function ARScene({ onExit }: ARSceneProps) {
   const [instruction, setInstruction] = useState<string>('Standby');
   const [inputLat, setInputLat] = useState<string>('');
   const [inputLng, setInputLng] = useState<string>('');
+
+  const [guideMode, setGuideModeState] = useState<'robot' | 'tracks'>('robot');
+  const guideModeRef = useRef<'robot' | 'tracks'>('robot');
+  const setGuideMode = (mode: 'robot' | 'tracks') => {
+    guideModeRef.current = mode;
+    setGuideModeState(mode);
+  };
 
   // Navigation Refs (Used inside requestAnimationFrame)
   const headingRef = useRef<number>(0);
@@ -171,6 +193,19 @@ export default function ARScene({ onExit }: ARSceneProps) {
     dirLight.position.set(0, 2, 2);
     scene.add(dirLight);
 
+    // --- ANIMAL TRACKS ---
+    const tracksGroup = new THREE.Group();
+    for (let i = 0; i < 8; i++) {
+      const paw = createPawPrint();
+      paw.position.set(
+        (i % 2 === 0 ? 0.2 : -0.2), // staggered
+        -1.5,                       // floor level
+        (i * 0.8) + 1.0             // placed along +Z
+      );
+      tracksGroup.add(paw);
+    }
+    scene.add(tracksGroup);
+
     // 5. LOAD THE 3D AVATAR
     const loader = new GLTFLoader();
     loader.load('/RobotExpressive.glb', (gltf) => {
@@ -207,25 +242,41 @@ export default function ARScene({ onExit }: ARSceneProps) {
       
       animationFrameId = requestAnimationFrame(animate);
       const delta = clock.getDelta();
+      const time = clock.getElapsedTime();
       
       if (localMixer) localMixer.update(delta);
       
+      if (guideModeRef.current === 'robot') {
+        if (avatarRef.current) avatarRef.current.visible = true;
+        tracksGroup.visible = false;
+      } else {
+        if (avatarRef.current) avatarRef.current.visible = false;
+        tracksGroup.visible = true;
+        // Animate tracks
+        tracksGroup.children.forEach((paw, index) => {
+          const mat = (paw.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          mat.opacity = 0.2 + Math.max(0, Math.sin(time * 4 - index * 0.8)) * 0.8;
+          for (let j=1; j<=3; j++) ((paw.children[j] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = mat.opacity;
+        });
+      }
+
       // AR SMART COMPASS MATH
-      if (avatarRef.current && targetLocationRef.current && currentLocationRef.current) {
+      if (targetLocationRef.current && currentLocationRef.current) {
         const bearing = getBearing(
           currentLocationRef.current.lat, currentLocationRef.current.lng,
           targetLocationRef.current.lat, targetLocationRef.current.lng
         );
-        // Calculate how much the user is turning away from the target
         const diffDeg = bearing - headingRef.current;
         const diffRad = diffDeg * (Math.PI / 180);
-        
-        // Rotate the avatar to point toward the destination relative to camera
-        // Using lerp for smooth rotation
-        // Add Math.PI so the robot faces AWAY from the camera instead of towards it
-        const currentY = avatarRef.current.rotation.y;
         const targetY = -diffRad + Math.PI; 
-        avatarRef.current.rotation.y = currentY + (targetY - currentY) * 0.1;
+        
+        if (avatarRef.current) {
+          const currentY = avatarRef.current.rotation.y;
+          avatarRef.current.rotation.y = currentY + (targetY - currentY) * 0.1;
+        }
+        
+        const currentTY = tracksGroup.rotation.y;
+        tracksGroup.rotation.y = currentTY + (targetY - currentTY) * 0.1;
       }
 
       renderer.render(scene, camera);
@@ -321,6 +372,10 @@ export default function ARScene({ onExit }: ARSceneProps) {
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => setTreeVisible(!treeVisible)}>
             Family Tree
+          </button>
+
+          <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px', backgroundColor: '#38b000' }} onClick={() => setGuideMode(guideMode === 'robot' ? 'tracks' : 'robot')}>
+            Mode: {guideMode === 'robot' ? 'Robot' : 'Tracks'}
           </button>
 
           <button className="gold-btn" style={{ fontSize: '0.8rem', padding: '10px' }} onClick={() => onExit ? onExit() : window.location.reload()}>
