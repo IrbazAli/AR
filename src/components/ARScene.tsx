@@ -77,6 +77,10 @@ export default function ARScene({ onExit }: ARSceneProps) {
   const targetLocationRef = useRef<{lat: number, lng: number} | null>(null);
   const currentLocationRef = useRef<{lat: number, lng: number} | null>(null);
   const lastPosRef = useRef<{lat: number, lng: number, time: number} | null>(null);
+  
+  const routeWaypointsRef = useRef<{lat: number, lng: number}[]>([]);
+  const currentWaypointIndexRef = useRef<number>(0);
+  const finalDestinationRef = useRef<{lat: number, lng: number} | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !videoRef.current) return;
@@ -149,13 +153,30 @@ export default function ARScene({ onExit }: ARSceneProps) {
            }
         }
 
-        if (targetLocationRef.current) {
-          const dist = getDistance(
+        if (finalDestinationRef.current && routeWaypointsRef.current.length > 0) {
+          let target = routeWaypointsRef.current[currentWaypointIndexRef.current];
+          if (!target) target = finalDestinationRef.current; 
+
+          const distToWaypoint = getDistance(
             pos.coords.latitude, pos.coords.longitude,
-            targetLocationRef.current.lat, targetLocationRef.current.lng
+            target.lat, target.lng
           );
-          setDistance(Math.round(dist));
-          if (dist < 5) {
+
+          // Advance to next waypoint if within 8 meters
+          if (distToWaypoint < 8 && currentWaypointIndexRef.current < routeWaypointsRef.current.length - 1) {
+            currentWaypointIndexRef.current += 1;
+            target = routeWaypointsRef.current[currentWaypointIndexRef.current];
+          }
+          
+          targetLocationRef.current = target; // Feed current waypoint to the 3D compass
+
+          const distToFinal = getDistance(
+            pos.coords.latitude, pos.coords.longitude,
+            finalDestinationRef.current.lat, finalDestinationRef.current.lng
+          );
+          setDistance(Math.round(distToFinal));
+
+          if (distToFinal < 5) {
              setInstruction("You have arrived at the grave!");
              if (walkActionRef.current && idleActionRef.current) {
                walkActionRef.current.stop();
@@ -330,8 +351,40 @@ export default function ARScene({ onExit }: ARSceneProps) {
       return;
     }
 
-    targetLocationRef.current = { lat, lng };
-    setInstruction(`Destination Set: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    finalDestinationRef.current = { lat, lng };
+
+    if (!currentLocationRef.current) {
+      setInstruction('Waiting for GPS signal...');
+      return;
+    }
+
+    setInstruction('Calculating Route...');
+    
+    try {
+      const startLng = currentLocationRef.current.lng;
+      const startLat = currentLocationRef.current.lat;
+      const res = await fetch(`https://router.project-osrm.org/route/v1/foot/${startLng},${startLat};${lng},${lat}?geometries=geojson`);
+      const data = await res.json();
+      
+      if (data.routes && data.routes.length > 0) {
+        const coords = data.routes[0].geometry.coordinates;
+        routeWaypointsRef.current = coords.map((c: any) => ({ lng: c[0], lat: c[1] }));
+        currentWaypointIndexRef.current = 1; 
+        targetLocationRef.current = routeWaypointsRef.current[1] || routeWaypointsRef.current[0];
+        setInstruction(`Route found! Follow Guide.`);
+      } else {
+        routeWaypointsRef.current = [{ lat, lng }];
+        currentWaypointIndexRef.current = 0;
+        targetLocationRef.current = { lat, lng };
+        setInstruction('Direct Route Set');
+      }
+    } catch (err) {
+      console.error(err);
+      routeWaypointsRef.current = [{ lat, lng }];
+      currentWaypointIndexRef.current = 0;
+      targetLocationRef.current = { lat, lng };
+      setInstruction('Offline Direct Route Set');
+    }
   };
 
   return (
