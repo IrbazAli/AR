@@ -170,7 +170,20 @@ export default function ARScene({ onExit }: ARSceneProps) {
           
           targetLocationRef.current = target; // Feed current waypoint to the 3D compass
 
-          const distToFinal = getDistance(
+          let routeDist = getDistance(
+            pos.coords.latitude, pos.coords.longitude,
+            target.lat, target.lng
+          );
+
+          // Add the rest of the waypoints to get the true "walking route" distance
+          for (let i = currentWaypointIndexRef.current; i < routeWaypointsRef.current.length - 1; i++) {
+             routeDist += getDistance(
+               routeWaypointsRef.current[i].lat, routeWaypointsRef.current[i].lng,
+               routeWaypointsRef.current[i+1].lat, routeWaypointsRef.current[i+1].lng
+             );
+          }
+          
+          const distToFinal = routeWaypointsRef.current.length > 1 ? routeDist : getDistance(
             pos.coords.latitude, pos.coords.longitude,
             finalDestinationRef.current.lat, finalDestinationRef.current.lng
           );
