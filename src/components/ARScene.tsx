@@ -319,8 +319,8 @@ export default function ARScene({ onExit }: ARSceneProps) {
         const session = renderer.xr.getSession();
 
         if (hitTestSourceRequested === false && session && referenceSpace) {
-          session.requestReferenceSpace('viewer').then((refSpace) => {
-            session.requestHitTestSource({ space: refSpace })?.then((source) => {
+          (session as any).requestReferenceSpace('viewer').then((refSpace: any) => {
+            (session as any).requestHitTestSource({ space: refSpace }).then((source: any) => {
               hitTestSource = source;
             });
           });
