@@ -81,6 +81,9 @@ export default function ARScene({ onExit }: ARSceneProps) {
   const routeWaypointsRef = useRef<{lat: number, lng: number}[]>([]);
   const currentWaypointIndexRef = useRef<number>(0);
   const finalDestinationRef = useRef<{lat: number, lng: number} | null>(null);
+  
+  const floorYRef = useRef<number | null>(null);
+  const guidePlacedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -236,9 +239,13 @@ export default function ARScene({ onExit }: ARSceneProps) {
     const controller = renderer.xr.getController(0);
     controller.addEventListener('select', () => {
       if (reticle.visible && avatarRef.current) {
-        avatarRef.current.position.setFromMatrixPosition(reticle.matrix);
-        tracksGroup.position.setFromMatrixPosition(reticle.matrix);
-        setInstruction("Guide Placed!");
+        const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+        floorYRef.current = pos.y;
+        guidePlacedRef.current = true;
+        
+        avatarRef.current.position.copy(pos);
+        tracksGroup.position.copy(pos);
+        setInstruction("Guide Placed! Enter destination.");
       }
     });
     scene.add(controller);
@@ -364,6 +371,14 @@ export default function ARScene({ onExit }: ARSceneProps) {
         
         const currentTY = tracksGroup.rotation.y;
         tracksGroup.rotation.y = currentTY + (targetY - currentTY) * 0.1;
+
+        if (guidePlacedRef.current && floorYRef.current !== null && avatarRef.current) {
+           const forwardVec = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0,1,0), targetY);
+           const targetPos = camera.position.clone().add(forwardVec.multiplyScalar(2));
+           targetPos.y = floorYRef.current;
+           avatarRef.current.position.lerp(targetPos, 0.05);
+           tracksGroup.position.lerp(targetPos, 0.05);
+        }
       }
 
       renderer.render(scene, camera);
