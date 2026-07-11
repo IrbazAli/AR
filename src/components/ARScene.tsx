@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
 
 // --- MATH UTILITIES ---
 function getBearing(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -49,7 +50,6 @@ interface ARSceneProps {
 }
 
 export default function ARScene({ onExit }: ARSceneProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Animation Refs
@@ -83,36 +83,28 @@ export default function ARScene({ onExit }: ARSceneProps) {
   const finalDestinationRef = useRef<{lat: number, lng: number} | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current || !videoRef.current) return;
+    if (!containerRef.current) return;
 
     let isMounted = true;
     let animationFrameId: number;
     let localMixer: THREE.AnimationMixer | null = null;
     const clock = new THREE.Clock();
 
-    // 1. SETUP RAW CAMERA STREAM (WebRTC)
-    navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: { ideal: "environment" } } 
-    })
-    .then((stream) => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-    })
-    .catch((err) => {
-      console.error("Camera access denied or unavailable", err);
-    });
+    // 1. (WebRTC removed - using native WebXR via ARButton instead)
 
     // 2. SETUP SENSORS (GPS & COMPASS)
+    let initialHeading: number | null = null;
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let alpha = event.alpha;
       let webkitHeading = (event as any).webkitCompassHeading;
+      let heading = 0;
       if (webkitHeading != null) {
-        headingRef.current = webkitHeading;
+        heading = webkitHeading;
       } else if (alpha != null) {
-        headingRef.current = 360 - alpha; // Rough Android mapping
+        heading = 360 - alpha; // Rough Android mapping
       }
+      headingRef.current = heading;
+      if (initialHeading === null && heading !== 0) initialHeading = heading;
     };
     window.addEventListener('deviceorientationabsolute', handleOrientation as any);
     window.addEventListener('deviceorientation', handleOrientation);
@@ -215,17 +207,44 @@ export default function ARScene({ onExit }: ARSceneProps) {
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
+    renderer.xr.enabled = true; // Enable WebXR
     
     containerRef.current.innerHTML = '';
     containerRef.current.appendChild(renderer.domElement);
+    
+    const arButton = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] });
+    arButton.style.bottom = '120px'; // move it up so it doesn't overlap our UI
+    arButton.id = 'ar-button';
+    document.body.appendChild(arButton);
 
-    // 4. LIGHTING
+    // 4. LIGHTING & HIT-TESTING
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 2);
     light.position.set(0.5, 1, 0.25);
     scene.add(light);
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
     dirLight.position.set(0, 2, 2);
     scene.add(dirLight);
+
+    const reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    );
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
+
+    const controller = renderer.xr.getController(0);
+    controller.addEventListener('select', () => {
+      if (reticle.visible && avatarRef.current) {
+        avatarRef.current.position.setFromMatrixPosition(reticle.matrix);
+        tracksGroup.position.setFromMatrixPosition(reticle.matrix);
+        setInstruction("Guide Placed!");
+      }
+    });
+    scene.add(controller);
+
+    let hitTestSource: XRHitTestSource | null = null;
+    let hitTestSourceRequested = false;
 
     // --- ANIMAL TRACKS ---
     const tracksGroup = new THREE.Group();
@@ -247,7 +266,8 @@ export default function ARScene({ onExit }: ARSceneProps) {
 
       const avatar = gltf.scene;
       avatar.scale.set(0.6, 0.6, 0.6); 
-      avatar.position.set(0, -0.5, 0); 
+      // Place out of view until placed by reticle
+      avatar.position.set(0, -10, 0); 
       
       // Face AWAY from the camera to act as a guide
       avatar.rotation.y = 0; 
@@ -270,11 +290,10 @@ export default function ARScene({ onExit }: ARSceneProps) {
       }
     });
 
-    // 6. RENDER LOOP
-    const animate = () => {
+    // 6. RENDER LOOP (WebXR requires setAnimationLoop)
+    renderer.setAnimationLoop((timestamp, frame) => {
       if (!isMounted) return;
       
-      animationFrameId = requestAnimationFrame(animate);
       const delta = clock.getDelta();
       const time = clock.getElapsedTime();
       
@@ -294,13 +313,47 @@ export default function ARScene({ onExit }: ARSceneProps) {
         });
       }
 
+      // Hit-Testing Logic
+      if (frame) {
+        const referenceSpace = renderer.xr.getReferenceSpace();
+        const session = renderer.xr.getSession();
+
+        if (hitTestSourceRequested === false && session && referenceSpace) {
+          session.requestReferenceSpace('viewer').then((refSpace) => {
+            session.requestHitTestSource({ space: refSpace })?.then((source) => {
+              hitTestSource = source;
+            });
+          });
+          session.addEventListener('end', () => {
+            hitTestSourceRequested = false;
+            hitTestSource = null;
+          });
+          hitTestSourceRequested = true;
+        }
+
+        if (hitTestSource && referenceSpace) {
+          const hitTestResults = frame.getHitTestResults(hitTestSource);
+          if (hitTestResults.length > 0) {
+            const hit = hitTestResults[0];
+            const pose = hit.getPose(referenceSpace);
+            if (pose) {
+               reticle.visible = true;
+               reticle.matrix.fromArray(pose.transform.matrix);
+            }
+          } else {
+            reticle.visible = false;
+          }
+        }
+      }
+
       // AR SMART COMPASS MATH
       if (targetLocationRef.current && currentLocationRef.current) {
         const bearing = getBearing(
           currentLocationRef.current.lat, currentLocationRef.current.lng,
           targetLocationRef.current.lat, targetLocationRef.current.lng
         );
-        const diffDeg = bearing - headingRef.current;
+        const baseHeading = initialHeading !== null ? initialHeading : headingRef.current;
+        const diffDeg = bearing - baseHeading;
         const diffRad = diffDeg * (Math.PI / 180);
         const targetY = -diffRad + Math.PI; 
         
@@ -314,8 +367,7 @@ export default function ARScene({ onExit }: ARSceneProps) {
       }
 
       renderer.render(scene, camera);
-    };
-    animate();
+    });
 
     // 7. HANDLE RESIZE
     const onWindowResize = () => {
@@ -328,7 +380,7 @@ export default function ARScene({ onExit }: ARSceneProps) {
     // 8. CLEANUP
     return () => {
       isMounted = false;
-      cancelAnimationFrame(animationFrameId);
+      renderer.setAnimationLoop(null);
       navigator.geolocation.clearWatch(watchId);
       window.removeEventListener('deviceorientationabsolute', handleOrientation as any);
       window.removeEventListener('deviceorientation', handleOrientation);
@@ -336,10 +388,8 @@ export default function ARScene({ onExit }: ARSceneProps) {
       if (containerRef.current && renderer.domElement.parentNode) {
         containerRef.current.removeChild(renderer.domElement);
       }
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
+      const arBtn = document.getElementById('ar-button');
+      if (arBtn && arBtn.parentNode) arBtn.parentNode.removeChild(arBtn);
     };
   }, []);
 
@@ -403,8 +453,7 @@ export default function ARScene({ onExit }: ARSceneProps) {
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#000' }}>
       
-      <video ref={videoRef} autoPlay playsInline muted style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1 }} />
-      <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2 }} />
+      <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }} />
 
       {/* GPS Dashboard */}
       <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0,0,0,0.6)', padding: '10px 20px', borderRadius: '15px', color: '#ffb703', border: '1px solid #ffb703', zIndex: 3, textAlign: 'center', minWidth: '250px' }}>
